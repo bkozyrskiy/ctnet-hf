@@ -1,0 +1,19 @@
+# Python bytecode and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Packaging/build outputs
+*.egg-info/
+build/
+dist/
+
+# Local example outputs
+artifacts/
+
+# Virtual environments
+.venv/
+venv/
+
+# Local editor settings
+.vscode/

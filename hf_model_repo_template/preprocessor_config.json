@@ -1,0 +1,7 @@
+{
+  "input_shape": ["batch_size", "n_channels", "n_times"],
+  "expected_units": "microvolts or normalized EEG values depending on training protocol",
+  "sampling_rate": 250,
+  "filtering": "not applied by this model; preprocessing must be handled externally",
+  "normalization": "not applied by this model; normalization must match the training protocol"
+}
