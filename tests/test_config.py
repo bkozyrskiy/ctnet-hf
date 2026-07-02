@@ -9,6 +9,11 @@ def test_config_round_trip(tmp_path):
         n_times=1000,
         sampling_rate=250,
         num_labels=4,
+        architecture="paper",
+        n_filters_time=8,
+        depth_multiplier=2,
+        att_dim=16,
+        att_heads=2,
         label2id={"left": 0, "right": 1, "foot": 2, "tongue": 3},
     )
 
@@ -20,6 +25,7 @@ def test_config_round_trip(tmp_path):
     assert loaded.n_times == 1000
     assert loaded.sampling_rate == 250
     assert loaded.num_labels == 4
+    assert loaded.architecture == "paper"
     assert loaded.label2id["left"] == 0
     assert loaded.id2label[3] == "tongue"
     assert "AutoModelForSequenceClassification" in loaded.auto_map

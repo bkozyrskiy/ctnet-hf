@@ -35,6 +35,10 @@ dependencies = [
 dev = [
   "pytest>=7.4",
 ]
+benchmark = [
+  "moabb>=1.1",
+  "scikit-learn>=1.2",
+]
 
 [tool.setuptools]
 package-dir = { "" = "src" }

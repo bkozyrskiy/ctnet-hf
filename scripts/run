@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT="${OUT:-${ROOT}/artifacts/benchmarks}"
+target="${1:-smoke}"
+
+export PYTHONPATH="${ROOT}/src:${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+export HOME="${BENCHMARK_HOME:-${HOME:-${ROOT}/artifacts/home}}"
+export MPLCONFIGDIR="${MPLCONFIGDIR:-${HOME}/.config/matplotlib}"
+export MNE_DATA="${MNE_DATA:-${ROOT}/artifacts/mne_data}"
+export MNE_DATASETS_BNCI_PATH="${MNE_DATASETS_BNCI_PATH:-${MNE_DATA}}"
+export NUMBA_DISABLE_JIT="${NUMBA_DISABLE_JIT:-1}"
+mkdir -p "${OUT}" "${HOME}" "${MPLCONFIGDIR}" "${MNE_DATA}" "${MNE_DATASETS_BNCI_PATH}"
+
+case "${target}" in
+  smoke)
+    [ "$#" -gt 0 ] && shift
+    set -- --dataset BNCI2014_001 --paradigm MotorImagery \
+      --evaluation TrainTest --subjects 1 --epochs 1 "$@"
+    ;;
+  all)
+    shift
+    set -- --dataset BNCI2014_001 --paradigm MotorImagery \
+      --evaluation TrainTest --architecture paper "$@"
+    ;;
+  custom)
+    shift
+    ;;
+  help | -h | --help)
+    echo "Usage: scripts/run [smoke|all|custom] [benchmark args...]"
+    exit 0
+    ;;
+  -*)
+    set -- --dataset BNCI2014_001 --paradigm MotorImagery \
+      --evaluation TrainTest --subjects 1 --epochs 1 "$@"
+    ;;
+  *)
+    echo "Unknown target: ${target}" >&2
+    exit 2
+    ;;
+esac
+
+exec "${PYTHON:-python}" -m benchmarks.run_moabb --output-dir "${OUT}" "$@"

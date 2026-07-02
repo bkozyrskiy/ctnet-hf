@@ -11,6 +11,10 @@ dist/
 # Local example outputs
 artifacts/
 
+# Local benchmark datasets
+data/
+datasets/
+
 # Virtual environments
 .venv/
 venv/

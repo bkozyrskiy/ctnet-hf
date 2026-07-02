@@ -1,4 +1,4 @@
-"""PyTorch implementation of a configurable CTNet-style EEG classifier."""
+"""PyTorch implementations of compact and paper-compatible CTNet models."""
 
 from __future__ import annotations
 
@@ -36,6 +36,10 @@ def _sinusoidal_positions(
     return embeddings.unsqueeze(0).to(dtype=dtype)
 
 
+def _pool_output_length(length: int, kernel_size: int, stride: int) -> int:
+    return (length - kernel_size) // stride + 1
+
+
 class TemporalConv2dSame(nn.Module):
     """Conv2d with explicit same-padding along the temporal axis only."""
 
@@ -53,8 +57,7 @@ class TemporalConv2dSame(nn.Module):
         total_pad = self.kernel_size - 1
         left = total_pad // 2
         right = total_pad - left
-        x = F.pad(x, (left, right, 0, 0))
-        return self.conv(x)
+        return self.conv(F.pad(x, (left, right, 0, 0)))
 
 
 class CtnetPreTrainedModel(PreTrainedModel):
@@ -63,6 +66,8 @@ class CtnetPreTrainedModel(PreTrainedModel):
     main_input_name = "input_values"
 
     def _init_weights(self, module: nn.Module) -> None:
+        if self.config.architecture == "paper":
+            return
         if isinstance(module, (nn.Linear, nn.Conv2d)):
             nn.init.xavier_uniform_(module.weight)
             if module.bias is not None:
@@ -74,12 +79,12 @@ class CtnetPreTrainedModel(PreTrainedModel):
                 nn.init.ones_(module.weight)
 
 
-class CtnetEncoder(nn.Module):
-    """Convolutional feature extractor followed by a transformer encoder."""
+class CompactCtnetEncoder(nn.Module):
+    """Original configurable compact encoder retained for compatibility."""
 
     def __init__(self, config: CtnetConfig) -> None:
         super().__init__()
-        self.config = config
+        self.output_dim = config.att_dim
         self.temporal_conv = TemporalConv2dSame(
             in_channels=1,
             out_channels=config.n_filters_time,
@@ -114,6 +119,7 @@ class CtnetEncoder(nn.Module):
             encoder_layer,
             num_layers=config.att_depth,
             norm=nn.LayerNorm(config.att_dim),
+            enable_nested_tensor=False,
         )
 
     def forward(self, input_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
@@ -145,12 +151,166 @@ class CtnetEncoder(nn.Module):
         return hidden_states, pooled_output
 
 
+class PaperMultiHeadAttention(nn.Module):
+    """Attention used by the authors' released CTNet implementation."""
+
+    def __init__(self, embed_dim: int, num_heads: int, dropout: float) -> None:
+        super().__init__()
+        self.embed_dim = embed_dim
+        self.num_heads = num_heads
+        self.head_dim = embed_dim // num_heads
+        self.keys = nn.Linear(embed_dim, embed_dim)
+        self.queries = nn.Linear(embed_dim, embed_dim)
+        self.values = nn.Linear(embed_dim, embed_dim)
+        self.attention_dropout = nn.Dropout(dropout)
+        self.projection = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        batch_size, seq_len, _ = x.shape
+
+        def split_heads(values: torch.Tensor) -> torch.Tensor:
+            return values.view(
+                batch_size, seq_len, self.num_heads, self.head_dim
+            ).transpose(1, 2)
+
+        queries = split_heads(self.queries(x))
+        keys = split_heads(self.keys(x))
+        values = split_heads(self.values(x))
+        energy = torch.matmul(queries, keys.transpose(-2, -1))
+        attention = F.softmax(energy / math.sqrt(self.embed_dim), dim=-1)
+        attention = self.attention_dropout(attention)
+        context = torch.matmul(attention, values)
+        context = (
+            context.transpose(1, 2)
+            .contiguous()
+            .view(batch_size, seq_len, self.embed_dim)
+        )
+        return self.projection(context)
+
+
+class PaperResidualAdd(nn.Module):
+    def __init__(self, module: nn.Module, embed_dim: int, dropout: float) -> None:
+        super().__init__()
+        self.module = module
+        self.dropout = nn.Dropout(dropout)
+        self.layer_norm = nn.LayerNorm(embed_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.layer_norm(self.dropout(self.module(x)) + x)
+
+
+class PaperTransformerBlock(nn.Module):
+    def __init__(self, config: CtnetConfig) -> None:
+        super().__init__()
+        self.attention = PaperResidualAdd(
+            PaperMultiHeadAttention(config.att_dim, config.att_heads, config.dropout),
+            config.att_dim,
+            config.dropout,
+        )
+        self.feed_forward = PaperResidualAdd(
+            nn.Sequential(
+                nn.Linear(config.att_dim, config.att_mlp_dim),
+                nn.GELU(),
+                nn.Dropout(config.dropout),
+                nn.Linear(config.att_mlp_dim, config.att_dim),
+            ),
+            config.att_dim,
+            config.dropout,
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.feed_forward(self.attention(x))
+
+
+class PaperCtnetEncoder(nn.Module):
+    """CTNet architecture from Zhao et al. and the released source code."""
+
+    def __init__(self, config: CtnetConfig) -> None:
+        super().__init__()
+        feature_dim = config.n_filters_time * config.depth_multiplier
+        first_length = _pool_output_length(
+            config.n_times, config.pool_time_length, config.pool_time_stride
+        )
+        token_count = _pool_output_length(
+            first_length,
+            config.second_pool_time_length,
+            config.second_pool_time_stride,
+        )
+        if token_count < 1:
+            raise ValueError("Paper CTNet pooling collapsed the temporal sequence.")
+        if token_count > config.max_position_embeddings:
+            raise ValueError(
+                f"Paper CTNet produces {token_count} tokens but "
+                f"max_position_embeddings={config.max_position_embeddings}."
+            )
+
+        self.token_count = token_count
+        self.output_dim = token_count * feature_dim
+        self.temporal_conv = TemporalConv2dSame(
+            1, config.n_filters_time, config.filter_time_length
+        )
+        self.temporal_norm = nn.BatchNorm2d(config.n_filters_time)
+        self.depthwise_conv = nn.Conv2d(
+            config.n_filters_time,
+            feature_dim,
+            kernel_size=(config.n_channels, 1),
+            groups=config.n_filters_time,
+            bias=False,
+        )
+        self.depthwise_norm = nn.BatchNorm2d(feature_dim)
+        self.first_pool = nn.AvgPool2d(
+            (1, config.pool_time_length),
+            stride=(1, config.pool_time_stride),
+        )
+        self.first_dropout = nn.Dropout(config.dropout)
+        self.feature_conv = TemporalConv2dSame(
+            feature_dim, feature_dim, config.second_filter_time_length
+        )
+        self.feature_norm = nn.BatchNorm2d(feature_dim)
+        self.second_pool = nn.AvgPool2d(
+            (1, config.second_pool_time_length),
+            stride=(1, config.second_pool_time_stride),
+        )
+        self.second_dropout = nn.Dropout(config.dropout)
+        self.activation = nn.ELU()
+        self.position_embeddings = nn.Parameter(
+            torch.randn(1, config.max_position_embeddings, feature_dim)
+        )
+        self.position_dropout = nn.Dropout(config.positional_dropout)
+        self.transformer = nn.ModuleList(
+            [PaperTransformerBlock(config) for _ in range(config.att_depth)]
+        )
+
+    def forward(self, input_values: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+        x = input_values.unsqueeze(1)
+        x = self.temporal_norm(self.temporal_conv(x))
+        x = self.activation(self.depthwise_norm(self.depthwise_conv(x)))
+        x = self.first_dropout(self.first_pool(x))
+        x = self.activation(self.feature_norm(self.feature_conv(x)))
+        x = self.second_dropout(self.second_pool(x))
+        x = x.squeeze(2).transpose(1, 2)
+        x = x * math.sqrt(x.shape[-1])
+        cnn_features = self.position_dropout(
+            x + self.position_embeddings[:, : x.shape[1], :]
+        )
+
+        transformer_features = cnn_features
+        for block in self.transformer:
+            transformer_features = block(transformer_features)
+        hidden_states = cnn_features + transformer_features
+        return hidden_states, hidden_states.flatten(start_dim=1)
+
+
 class CtnetModel(CtnetPreTrainedModel):
     """Base CTNet encoder model."""
 
     def __init__(self, config: CtnetConfig) -> None:
         super().__init__(config)
-        self.encoder = CtnetEncoder(config)
+        if config.architecture == "paper":
+            self.encoder = PaperCtnetEncoder(config)
+        else:
+            self.encoder = CompactCtnetEncoder(config)
+        self.output_dim = self.encoder.output_dim
         self.post_init()
 
     def forward(
@@ -158,7 +318,9 @@ class CtnetModel(CtnetPreTrainedModel):
         input_values: torch.FloatTensor,
         return_dict: Optional[bool] = None,
     ) -> BaseModelOutputWithPooling | tuple[torch.Tensor, torch.Tensor]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         inputs = ensure_eeg_tensor(
             input_values,
             expected_channels=self.config.n_channels,
@@ -182,8 +344,13 @@ class CtnetForEEGClassification(CtnetPreTrainedModel):
     def __init__(self, config: CtnetConfig) -> None:
         super().__init__(config)
         self.ctnet = CtnetModel(config)
-        self.classifier_dropout = nn.Dropout(config.dropout)
-        self.classifier = nn.Linear(config.att_dim, config.num_labels)
+        dropout = (
+            config.classifier_dropout
+            if config.architecture == "paper"
+            else config.dropout
+        )
+        self.classifier_dropout = nn.Dropout(dropout)
+        self.classifier = nn.Linear(self.ctnet.output_dim, config.num_labels)
         self.post_init()
 
     def forward(
@@ -192,10 +359,11 @@ class CtnetForEEGClassification(CtnetPreTrainedModel):
         labels: Optional[torch.LongTensor] = None,
         return_dict: Optional[bool] = None,
     ) -> SequenceClassifierOutput | tuple[torch.Tensor, ...]:
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         outputs = self.ctnet(input_values=input_values, return_dict=True)
-        pooled_output = self.classifier_dropout(outputs.pooler_output)
-        logits = self.classifier(pooled_output)
+        logits = self.classifier(self.classifier_dropout(outputs.pooler_output))
 
         loss = None
         if labels is not None:

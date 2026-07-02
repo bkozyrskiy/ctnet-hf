@@ -1,13 +1,13 @@
 # CTNet-HF: Hugging Face-compatible CTNet for EEG motor imagery classification
 
-`ctnet-hf` provides an architecture-only Hugging Face Transformers port of CTNet for EEG motor imagery classification. It is intended as a clean starting point for training, fine-tuning, packaging, and later publishing your own CTNet checkpoints.
+`ctnet-hf` provides Hugging Face Transformers implementations of the published CTNet architecture and the repository's earlier compact CTNet-style variant. It is intended for training, evaluation, packaging, and later publishing your own CTNet checkpoints.
 
 This repository currently provides the CTNet architecture only. It does not provide pretrained weights. EEG decoding models are often dataset-, montage-, session-, and subject-dependent; users should train or fine-tune the model under their own protocol.
 
 ## What this is
 
 - A `transformers`-compatible Python package named `ctnet_hf`
-- A configurable CTNet-style hybrid convolution + transformer model for EEG classification
+- A paper-compatible CTNet architecture plus the earlier compact variant
 - A repository scaffold suitable for later conversion into a Hugging Face model repository
 - Tests, examples, and a lightweight architecture-only template model card
 
@@ -37,6 +37,7 @@ import torch
 from ctnet_hf import CtnetConfig, CtnetForEEGClassification
 
 config = CtnetConfig(
+    architecture="paper",
     n_channels=22,
     n_times=1000,
     sampling_rate=250,
@@ -69,12 +70,9 @@ The default configuration matches BCI Competition IV 2a style dimensions:
 - `sampling_rate=250`
 - `num_labels=4`
 
-The implementation keeps the architecture dataset-configurable through `CtnetConfig`, including:
+Set `architecture="paper"` for Zhao et al.'s CTNet: the three convolution stages, learned positions, six post-norm Transformer blocks, CNN residual, and flattened classifier. The default `architecture="compact"` preserves checkpoints made with this repository's earlier configurable encoder.
 
-- EEG dimensions and labels
-- Temporal convolution parameters
-- Pooling and dropout
-- Transformer depth, head count, embedding size, and MLP width
+Both variants remain dataset-configurable through `CtnetConfig`, including EEG dimensions, convolution and pooling parameters, dropout, and Transformer dimensions.
 
 ## Save/load
 
@@ -96,7 +94,7 @@ The repository also includes `hf_model_repo_template/` for an architecture-only 
 
 ## Training your own CTNet
 
-This repo does not bundle dataset loaders or MOABB training flows yet. The expected workflow is:
+The expected workflow is:
 
 1. preprocess EEG externally using your own protocol;
 2. instantiate `CtnetConfig` for your dataset layout;
@@ -105,21 +103,21 @@ This repo does not bundle dataset loaders or MOABB training flows yet. The expec
 
 The `examples/train_minimal_dummy.py` script is only a smoke test and produces meaningless dummy weights.
 
+For local benchmarking, this repo includes a paper-compatible MOABB protocol under `benchmarks/`. It uses the competition train/test sessions, 1000-sample unfiltered trials, training-only S&R augmentation, clean stratified validation, and best-loss checkpoint selection. The known overlapping validation split in the released upstream code is intentionally not reproduced.
+
+```bash
+scripts/run
+```
+
+See `benchmarks/README.md` for the supported MOABB benchmark options.
+
 ## License and citation
 
 This implementation was written as a clean-room Hugging Face port and does not ship copied upstream training checkpoints.
 
-The architecture is inspired by the CTNet family of EEG motor imagery models. Before publishing a downstream model repository, you should verify the upstream paper/repository attribution details that match the exact CTNet variant you trained against.
+The paper-compatible implementation follows:
 
-Useful references used while preparing this scaffold:
+- Zhao et al., "CTNet: a convolutional transformer network for EEG-based motor imagery classification," Scientific Reports 14, 20237 (2024): https://doi.org/10.1038/s41598-024-71118-7
+- Authors' released implementation: https://github.com/snailpt/CTNet
 
-- EEGNet paper: https://arxiv.org/abs/1611.08024
-- EEG-TCNet paper: https://arxiv.org/abs/2006.00622
-- Subject-specific encoders paper discussing CTNet baselines: https://arxiv.org/abs/2606.16462
-
-## Roadmap
-
-- Finalize exact CTNet paper/repository citation metadata
-- Add training and evaluation utilities in a separate milestone
-- Add a Hub-ready example after trained checkpoints exist
-- Add optional preprocessing adapters for common EEG datasets
+No upstream training checkpoints are redistributed here.
