@@ -60,3 +60,15 @@ def test_model_rejects_wrong_time_length():
 
     with pytest.raises(ValueError, match="Expected 1000 time samples"):
         model(input_values=torch.randn(2, 3, 999))
+
+
+@pytest.mark.parametrize(
+    ("architecture", "expected_parameters"),
+    [("paper", 27_284), ("compact", 71_996)],
+)
+def test_documented_default_parameter_counts(architecture, expected_parameters):
+    model = CtnetForEEGClassification(CtnetConfig(architecture=architecture))
+
+    parameter_count = sum(parameter.numel() for parameter in model.parameters())
+
+    assert parameter_count == expected_parameters

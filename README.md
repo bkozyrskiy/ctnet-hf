@@ -74,6 +74,10 @@ Set `architecture="paper"` for Zhao et al.'s CTNet: the three convolution stages
 
 Both variants remain dataset-configurable through `CtnetConfig`, including EEG dimensions, convolution and pooling parameters, dropout, and Transformer dimensions.
 
+The layer-by-layer tensor shapes, parameter counts, variant comparison, and
+documented differences from the authors' reference implementation are in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Save/load
 
 Standard local save/load works with the package API. For publishable checkpoints,
@@ -135,8 +139,9 @@ For local benchmarking, this repo includes a paper-compatible MOABB protocol und
 scripts/run
 ```
 
-See `benchmarks/README.md` for the supported MOABB benchmark options.
-The frozen first-release tables are tracked under `release/results/`.
+See [`benchmarks/README.md`](benchmarks/README.md) for the supported MOABB
+benchmark options. The frozen first-release tables and their provenance are
+tracked under [`release/`](release/README.md).
 
 ## First-release checks
 
@@ -161,7 +166,7 @@ scripts/check_clean_inference \
 
 ## License and citation
 
-This implementation was written as a clean-room Hugging Face port and does not ship copied upstream training checkpoints.
+This implementation was written as a clean-room Hugging Face port and does not ship copied upstream training checkpoints. Cite the software using [`CITATION.cff`](CITATION.cff).
 
 The paper-compatible implementation follows:
 
