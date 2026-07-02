@@ -1,15 +1,15 @@
 # CTNet-HF: Hugging Face-compatible CTNet for EEG motor imagery classification
 
-`ctnet-hf` provides Hugging Face Transformers implementations of the published CTNet architecture and the repository's earlier compact CTNet-style variant. It is intended for training, evaluation, packaging, and later publishing your own CTNet checkpoints.
+`ctnet-hf` provides Hugging Face Transformers implementations of the published CTNet architecture and the repository's earlier compact CTNet-style variant. It supports training, evaluation, and complete model-plus-preprocessor release bundles.
 
-This repository currently provides the CTNet architecture only. It does not provide pretrained weights. EEG decoding models are often dataset-, montage-, session-, and subject-dependent; users should train or fine-tune the model under their own protocol.
+This source repository does not commit pretrained weights. EEG decoding models are dataset-, montage-, session-, and subject-dependent; use only a released checkpoint whose documented input contract matches your data.
 
 ## What this is
 
 - A `transformers`-compatible Python package named `ctnet_hf`
 - A paper-compatible CTNet architecture plus the earlier compact variant
-- A repository scaffold suitable for later conversion into a Hugging Face model repository
-- Tests, examples, and a lightweight architecture-only template model card
+- A release path that exports weights, custom code, and fitted preprocessing together
+- Tests, a comprehensive model-card template, and frozen three-seed evaluation evidence
 
 ## What this is not
 
@@ -76,7 +76,9 @@ Both variants remain dataset-configurable through `CtnetConfig`, including EEG d
 
 ## Save/load
 
-Standard local save/load works with the package API:
+Standard local save/load works with the package API. For publishable checkpoints,
+use `export_huggingface_bundle(model, preprocessor, output_dir)` so the model and
+its fitted input contract cannot drift apart.
 
 ```python
 model.save_pretrained("./ctnet-local")
@@ -90,7 +92,31 @@ model = AutoModelForSequenceClassification.from_pretrained(
 )
 ```
 
-The repository also includes `hf_model_repo_template/` for an architecture-only Hugging Face model repo layout that intentionally excludes weights.
+A usable EEG checkpoint also needs its fitted preprocessing statistics:
+
+```python
+import numpy as np
+import torch
+from transformers import AutoFeatureExtractor, AutoModelForSequenceClassification
+
+repo_id = "YOUR_ORG/YOUR_MODEL"  # or a local exported bundle
+revision = "PINNED_HUB_COMMIT"
+processor = AutoFeatureExtractor.from_pretrained(
+    repo_id, trust_remote_code=True, revision=revision
+)
+model = AutoModelForSequenceClassification.from_pretrained(
+    repo_id, trust_remote_code=True, revision=revision
+).eval()
+trial = np.load("trial.npy")  # raw shape and units must match the model card
+
+with torch.no_grad():
+    probabilities = torch.softmax(model(**processor(trial)).logits, dim=-1)
+prediction = model.config.id2label[int(probabilities.argmax())]
+```
+
+The repository also includes `hf_model_repo_template/README.md` as a detailed
+writing template. Configuration and preprocessing JSON are intentionally not
+templated: they must be generated from the exact trained checkpoint.
 
 ## Training your own CTNet
 
@@ -110,6 +136,28 @@ scripts/run
 ```
 
 See `benchmarks/README.md` for the supported MOABB benchmark options.
+The frozen first-release tables are tracked under `release/results/`.
+
+## First-release checks
+
+The release runner executes BNCI2014-001 subjects 1–9 with seeds 0, 1, and 2.
+For every subject/seed it exports the model, fitted training-only Z-score, channel
+contract, training manifest, and one export/reload equivalence report.
+
+```bash
+PYTHON=/path/to/python scripts/run release --device cuda
+```
+
+After choosing the checkpoint to publish, verify a held-out real trial in a
+throwaway environment. `MODEL_OR_REPO_ID` may be a local bundle before upload
+or the Hugging Face repository id after upload:
+
+```bash
+scripts/check_clean_inference \
+  MODEL_OR_REPO_ID \
+  artifacts/release/verification/BNCI2014_001/paper/seed-0/subject-1/real_test_trial.npy \
+  EXPECTED_PREDICTED_LABEL
+```
 
 ## License and citation
 
@@ -117,7 +165,11 @@ This implementation was written as a clean-room Hugging Face port and does not s
 
 The paper-compatible implementation follows:
 
-- Zhao et al., "CTNet: a convolutional transformer network for EEG-based motor imagery classification," Scientific Reports 14, 20237 (2024): https://doi.org/10.1038/s41598-024-71118-7
+- Wei Zhao, Xiaolu Jiang, Baocan Zhang, Shixiao Xiao, and Sujun Weng,
+  "CTNet: a convolutional transformer network for EEG-based motor imagery
+  classification," Scientific Reports 14, 20237 (2024):
+  https://doi.org/10.1038/s41598-024-71118-7
 - Authors' released implementation: https://github.com/snailpt/CTNet
 
-No upstream training checkpoints are redistributed here.
+No upstream training checkpoints or BNCI2014-001 recordings are redistributed
+here. See `THIRD_PARTY_NOTICES.md` and `CITATION.cff`.

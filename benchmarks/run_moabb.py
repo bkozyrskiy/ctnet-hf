@@ -3,14 +3,57 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import importlib.metadata
+import json
+import platform
+import subprocess
 import time
 from pathlib import Path
 
 import numpy as np
 
+from ctnet_hf.release import (
+    install_release_documents,
+    validate_huggingface_bundle,
+    write_release_manifest,
+)
+
+from .model_card import render_bnci2014_001_card
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
 
 DATASETS = {
     "BNCI2014_001": ("moabb.datasets", "BNCI2014_001"),
+}
+
+DATASET_CHANNELS = {
+    "BNCI2014_001": [
+        "Fz",
+        "FC3",
+        "FC1",
+        "FCz",
+        "FC2",
+        "FC4",
+        "C5",
+        "C3",
+        "C1",
+        "Cz",
+        "C2",
+        "C4",
+        "C6",
+        "CP3",
+        "CP1",
+        "CPz",
+        "CP2",
+        "CP4",
+        "P1",
+        "Pz",
+        "P2",
+        "POz",
+    ],
 }
 
 PARADIGMS = {
@@ -48,6 +91,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--train-session", default="0train")
     parser.add_argument("--test-session", default="1test")
     parser.add_argument("--output-dir", type=Path, default=Path("artifacts/benchmarks"))
+    parser.add_argument(
+        "--export-dir",
+        type=Path,
+        help="Export one model+preprocessor bundle per subject and verify reload.",
+    )
+    parser.add_argument(
+        "--verification-dir",
+        type=Path,
+        help="Save one held-out real trial per bundle for isolated inference checks.",
+    )
     parser.add_argument("--architecture", choices=("paper", "compact"), default="paper")
     parser.add_argument("--epochs", type=int, default=1000)
     parser.add_argument("--batch-size", type=int, default=72)
@@ -127,7 +180,7 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     output_path = args.output_dir / (
         f"moabb_{args.dataset}_{args.paradigm}_{args.evaluation}_"
-        f"{args.architecture}.csv"
+        f"{args.architecture}_seed-{args.seed}.csv"
     )
     summary_path = output_path.with_name(f"{output_path.stem}_summary.csv")
     metric_names = list(
@@ -209,15 +262,106 @@ def _run_train_test(args, dataset, paradigm, estimator_cls, metric_name):
         estimator = _build_estimator(args, estimator_cls)
         start = time.perf_counter()
         estimator.fit(x[train_mask], y[train_mask])
-        score = scorer(estimator, x[test_mask], y[test_mask])
-        predictions = estimator.predict(x[test_mask])
+        test_x = x[test_mask]
+        test_y = y[test_mask]
+        score = scorer(estimator, test_x, test_y)
+        probabilities = estimator.predict_proba(test_x)
+        predictions = estimator.classes_[probabilities.argmax(axis=1)]
         elapsed = time.perf_counter() - start
+        bundle_path = None
+        equivalence_max_abs_diff = None
+        if args.export_dir is not None:
+            bundle_path = (
+                args.export_dir
+                / args.dataset
+                / args.architecture
+                / f"seed-{args.seed}"
+                / f"subject-{subject}"
+            )
+            estimator.save_pretrained(
+                str(bundle_path),
+                channel_names=_dataset_channel_names(
+                    args.dataset, dataset, x.shape[1]
+                ),
+                dataset=getattr(dataset, "code", args.dataset),
+                subject=int(subject),
+                seed=args.seed,
+                unit="microvolts",
+                trial_start_seconds=0.0,
+                trial_duration_seconds=args.input_samples / args.sampling_rate,
+                software_filter=None,
+            )
+            reloaded_probabilities, reloaded_predictions = _predict_from_bundle(
+                bundle_path,
+                test_x,
+                batch_size=args.batch_size,
+                device=estimator.device_,
+            )
+            equivalence_max_abs_diff = float(
+                np.max(np.abs(probabilities - reloaded_probabilities))
+            )
+            if not np.array_equal(predictions.astype(str), reloaded_predictions):
+                raise RuntimeError(
+                    f"Reloaded bundle changed test predictions for subject {subject}."
+                )
+            if not np.allclose(
+                probabilities,
+                reloaded_probabilities,
+                rtol=1e-5,
+                atol=1e-6,
+            ):
+                raise RuntimeError(
+                    "Reloaded bundle probabilities differ from the fitted estimator "
+                    f"for subject {subject} (max abs diff "
+                    f"{equivalence_max_abs_diff:.3g})."
+                )
+            probability_sha256 = hashlib.sha256(
+                np.ascontiguousarray(probabilities).tobytes()
+            ).hexdigest()
+            equivalence = {
+                "atol": 1e-6,
+                "max_abs_probability_difference": equivalence_max_abs_diff,
+                "n_test_trials": int(len(test_x)),
+                "predictions_equal": True,
+                "probabilities_allclose": True,
+                "probability_sha256": probability_sha256,
+                "rtol": 1e-5,
+                "seed": args.seed,
+                "subject": int(subject),
+            }
+            (bundle_path / "export_reload_equivalence.json").write_text(
+                json.dumps(equivalence, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
+            if args.verification_dir is not None:
+                _save_verification_trial(
+                    args.verification_dir,
+                    args,
+                    subject,
+                    test_x[0],
+                    test_y[0],
+                    predictions[0],
+                    probabilities[0],
+                    bundle_path,
+                )
         metrics = {
             metric_name: score,
-            "cohen_kappa": cohen_kappa_score(y[test_mask], predictions),
+            "cohen_kappa": cohen_kappa_score(test_y, predictions),
         }
         if metric_name != "accuracy":
-            metrics["accuracy"] = accuracy_score(y[test_mask], predictions)
+            metrics["accuracy"] = accuracy_score(test_y, predictions)
+        if bundle_path is not None:
+            _write_bundle_metadata(
+                bundle_path,
+                args,
+                subject,
+                metrics,
+                estimator,
+                _dataset_channel_names(args.dataset, dataset, x.shape[1]),
+                training_seconds=elapsed,
+                n_train_trials=int(train_mask.sum()),
+                n_test_trials=int(test_mask.sum()),
+            )
         rows.append(
             {
                 **metrics,
@@ -232,11 +376,209 @@ def _run_train_test(args, dataset, paradigm, estimator_cls, metric_name):
                 "n_sessions": int(sessions.nunique()),
                 "dataset": getattr(dataset, "code", args.dataset),
                 "architecture": args.architecture,
+                "seed": args.seed,
                 "best_epoch": estimator.best_epoch_,
+                "bundle_path": str(bundle_path) if bundle_path is not None else None,
+                "equivalence_max_abs_diff": equivalence_max_abs_diff,
                 "pipeline": f"CTNet-{args.architecture}",
             }
         )
     return pd.DataFrame(rows)
+
+
+def _dataset_channel_names(
+    dataset_name: str,
+    dataset,
+    n_channels: int,
+) -> list[str] | None:
+    channels = DATASET_CHANNELS.get(dataset_name, getattr(dataset, "channels", None))
+    if channels is None:
+        return None
+    channels = [str(channel) for channel in channels]
+    return channels if len(channels) == n_channels else None
+
+
+def _predict_from_bundle(
+    bundle_path: Path,
+    X: np.ndarray,
+    *,
+    batch_size: int,
+    device,
+) -> tuple[np.ndarray, np.ndarray]:
+    import torch
+
+    from ctnet_hf import CtnetForEEGClassification, CtnetPreprocessor
+
+    processor = CtnetPreprocessor.from_pretrained(bundle_path)
+    model = CtnetForEEGClassification.from_pretrained(bundle_path).to(device)
+    model.eval()
+    values = processor(X, return_tensors="pt")["input_values"]
+    probabilities = []
+    with torch.no_grad():
+        for start in range(0, len(values), batch_size):
+            logits = model(
+                input_values=values[start : start + batch_size].to(device)
+            ).logits
+            probabilities.append(torch.softmax(logits, dim=-1).cpu().numpy())
+    probabilities = np.concatenate(probabilities)
+    predictions = np.asarray(
+        [str(model.config.id2label[int(index)]) for index in probabilities.argmax(1)]
+    )
+    return probabilities, predictions
+
+
+def _save_verification_trial(
+    verification_dir: Path,
+    args: argparse.Namespace,
+    subject: int,
+    trial: np.ndarray,
+    expected_label,
+    predicted_label,
+    probabilities: np.ndarray,
+    bundle_path: Path,
+) -> None:
+    trial_dir = (
+        verification_dir
+        / args.dataset
+        / args.architecture
+        / f"seed-{args.seed}"
+        / f"subject-{subject}"
+    )
+    trial_dir.mkdir(parents=True, exist_ok=True)
+    np.save(trial_dir / "real_test_trial.npy", np.asarray(trial, dtype=np.float32))
+    manifest = {
+        "bundle_path": str(bundle_path.resolve()),
+        "dataset": args.dataset,
+        "expected_label": str(expected_label),
+        "predicted_label": str(predicted_label),
+        "probabilities": [float(value) for value in probabilities],
+        "seed": args.seed,
+        "session": args.test_session,
+        "subject": int(subject),
+        "trial_index_in_test_session": 0,
+    }
+    (trial_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
+def _write_bundle_metadata(
+    bundle_path: Path,
+    args: argparse.Namespace,
+    subject: int,
+    metrics: dict[str, float],
+    estimator,
+    channel_names: list[str] | None,
+    *,
+    training_seconds: float,
+    n_train_trials: int,
+    n_test_trials: int,
+) -> None:
+    import torch
+
+    hyperparameters = {
+        key: value
+        for key, value in estimator.get_params().items()
+        if isinstance(value, (str, int, float, bool)) or value is None
+    }
+    metadata = {
+        "architecture": args.architecture,
+        "best_epoch": int(estimator.best_epoch_),
+        "best_validation_loss": float(estimator.best_validation_loss_),
+        "channel_names": channel_names,
+        "dataset": args.dataset,
+        "deterministic_algorithms": True,
+        "evaluation": args.evaluation,
+        "hyperparameters": hyperparameters,
+        "metrics": {key: float(value) for key, value in metrics.items()},
+        "n_test_trials": n_test_trials,
+        "n_train_trials": n_train_trials,
+        "packages": {
+            name: importlib.metadata.version(name)
+            for name in (
+                "ctnet-hf",
+                "moabb",
+                "mne",
+                "numpy",
+                "scikit-learn",
+                "torch",
+                "transformers",
+            )
+        },
+        "paradigm": args.paradigm,
+        "platform": platform.platform(),
+        "python": platform.python_version(),
+        "source": _source_metadata(),
+        "seed": args.seed,
+        "subject": int(subject),
+        "test_session": args.test_session,
+        "training_and_evaluation_seconds": training_seconds,
+        "train_session": args.train_session,
+        "hardware": {
+            "device": str(estimator.device_),
+            "name": (
+                torch.cuda.get_device_name(estimator.device_)
+                if estimator.device_.type == "cuda"
+                else platform.processor() or "CPU"
+            ),
+        },
+    }
+    (bundle_path / "training_metadata.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    accuracy = metrics.get("accuracy", float("nan"))
+    kappa = metrics.get("cohen_kappa", float("nan"))
+    parameter_count = sum(parameter.numel() for parameter in estimator.model_.parameters())
+    model_card = render_bnci2014_001_card(
+        subject=int(subject),
+        seed=int(args.seed),
+        train_session=args.train_session,
+        test_session=args.test_session,
+        accuracy=float(accuracy),
+        cohen_kappa=float(kappa),
+        best_epoch=int(estimator.best_epoch_),
+        channel_names=channel_names,
+        id2label={
+            int(index): str(label)
+            for index, label in estimator.model_.config.id2label.items()
+        },
+        parameter_count=parameter_count,
+        training_seconds=training_seconds,
+    )
+    (bundle_path / "README.md").write_text(model_card, encoding="utf-8")
+    install_release_documents(
+        bundle_path,
+        license_path=PROJECT_ROOT / "LICENSE",
+        notices_path=PROJECT_ROOT / "THIRD_PARTY_NOTICES.md",
+    )
+    write_release_manifest(bundle_path)
+    validate_huggingface_bundle(bundle_path, require_documentation=True)
+
+
+def _source_metadata() -> dict[str, object]:
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=PROJECT_ROOT,
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        dirty = bool(
+            subprocess.run(
+                ["git", "status", "--porcelain"],
+                cwd=PROJECT_ROOT,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip()
+        )
+        return {"git_commit": revision, "git_dirty": dirty}
+    except (OSError, subprocess.CalledProcessError):
+        return {"git_commit": None, "git_dirty": None}
 
 
 def _metric_name(paradigm) -> str:

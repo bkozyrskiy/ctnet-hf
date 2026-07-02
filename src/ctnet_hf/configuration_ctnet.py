@@ -17,7 +17,7 @@ class CtnetConfig(PreTrainedConfig):
         n_channels: int = 22,
         n_times: int = 1000,
         sampling_rate: Optional[int] = 250,
-        num_labels: int = 4,
+        num_labels: Optional[int] = None,
         label2id: Optional[dict[str, int]] = None,
         id2label: Optional[dict[int, str]] = None,
         architecture: str = "compact",
@@ -73,6 +73,13 @@ class CtnetConfig(PreTrainedConfig):
         att_dim = att_dim or selected["att_dim"]
         att_mlp_dim = att_mlp_dim or selected["att_mlp_dim"]
 
+        if num_labels is None:
+            if id2label is not None:
+                num_labels = len(id2label)
+            elif label2id is not None:
+                num_labels = len(label2id)
+            else:
+                num_labels = 4
         if num_labels < 1:
             raise ValueError("num_labels must be at least 1.")
         if n_channels < 1:

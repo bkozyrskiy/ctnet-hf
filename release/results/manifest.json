@@ -1,0 +1,42 @@
+{
+  "format_version": 1,
+  "inputs": [
+    {
+      "path": "artifacts/release/benchmarks/moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-0.csv",
+      "sha256": "c4e5955eea4e138504fea6a55dab12982a152f403e985baf43b0cb16c289b446"
+    },
+    {
+      "path": "artifacts/release/benchmarks/moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-1.csv",
+      "sha256": "6254ea70c88ff1c052b19b7533817cc563bd7cb56ec20ff9d1bc0c2ddc2158a5"
+    },
+    {
+      "path": "artifacts/release/benchmarks/seed-2-part-a/moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-2.csv",
+      "sha256": "e4bf1278f5b714642821df0b7b9fb9b1809b64bf66bf732e268de4c7255a0a58"
+    },
+    {
+      "path": "artifacts/release/benchmarks/seed-2-part-b/moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-2.csv",
+      "sha256": "a01d0b2c91fb4c929f916769be835cad6d173ae5ad220b23e6ee9aa5cf00fef0"
+    }
+  ],
+  "n_rows": 27,
+  "outputs": [
+    {
+      "path": "bnci2014_001_three_seed_results.csv",
+      "sha256": "45146ed889784bb2e68035f3f42d8247517444e00015608904f7b32036d132bb"
+    },
+    {
+      "path": "summary_by_seed.csv",
+      "sha256": "9dc458709f4952a93b0d6b48d9abb772a9fb40208dba9c0da2f085fac233e035"
+    },
+    {
+      "path": "summary_by_subject.csv",
+      "sha256": "393b4291a1dd286fbf892946f6e66f6cadcb7ddbf0c9f4028b12ce787b8763e2"
+    },
+    {
+      "path": "summary_overall.csv",
+      "sha256": "bc7fc704c964694b6f2d54809f539ef1cef48981504ced897367d81022a40071"
+    }
+  ],
+  "seeds": [0, 1, 2],
+  "subjects": [1, 2, 3, 4, 5, 6, 7, 8, 9]
+}

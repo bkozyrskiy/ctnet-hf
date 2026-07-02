@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import random
 from typing import Any
 
@@ -11,7 +12,12 @@ from sklearn.model_selection import train_test_split
 import torch
 from torch.utils.data import DataLoader, TensorDataset
 
-from ctnet_hf import CtnetConfig, CtnetForEEGClassification
+from ctnet_hf import (
+    CtnetConfig,
+    CtnetForEEGClassification,
+    CtnetPreprocessor,
+    export_huggingface_bundle,
+)
 
 
 class CtnetSklearnClassifier(ClassifierMixin, BaseEstimator):
@@ -322,6 +328,44 @@ class CtnetSklearnClassifier(ClassifierMixin, BaseEstimator):
         predictions = self.predict(X)
         return float(np.mean(predictions == np.asarray(y).reshape(-1)))
 
+    def save_pretrained(
+        self,
+        save_directory: str,
+        *,
+        channel_names: list[str] | None = None,
+        dataset: str | None = None,
+        subject: int | None = None,
+        seed: int | None = None,
+        unit: str = "volts",
+        trial_start_seconds: float | None = None,
+        trial_duration_seconds: float | None = None,
+        software_filter: dict[str, float] | None = None,
+    ) -> None:
+        """Export model weights and fitted preprocessing as one HF bundle."""
+        if not hasattr(self, "model_"):
+            raise ValueError("Cannot export an estimator before fit().")
+        self.model_.config.dataset = dataset
+        self.model_.config.subject = subject
+        self.model_.config.training_seed = seed
+        preprocessor = CtnetPreprocessor(
+            n_channels=self.model_.config.n_channels,
+            n_times=self.model_.config.n_times,
+            sampling_rate=self.model_.config.sampling_rate,
+            input_samples=self.input_samples,
+            standardize=self.standardize,
+            standardize_mode=self.standardize_mode,
+            mean=self.mean_,
+            std=self.std_,
+            channel_names=channel_names,
+            dataset=dataset,
+            subject=subject,
+            unit=unit,
+            trial_start_seconds=trial_start_seconds,
+            trial_duration_seconds=trial_duration_seconds,
+            software_filter=software_filter,
+        )
+        export_huggingface_bundle(self.model_, preprocessor, save_directory)
+
 
 def _validate_eeg_array(X: np.ndarray) -> np.ndarray:
     X = np.asarray(X)
@@ -454,11 +498,16 @@ def _evaluate_loss(
 
 
 def _set_seed(seed: int) -> None:
+    os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
+    torch.use_deterministic_algorithms(True)
+    if torch.backends.cudnn.is_available():
+        torch.backends.cudnn.benchmark = False
+        torch.backends.cudnn.deterministic = True
 
 
 def _resolve_device(device: str) -> torch.device:

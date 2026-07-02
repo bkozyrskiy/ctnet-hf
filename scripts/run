@@ -24,11 +24,31 @@ case "${target}" in
     set -- --dataset BNCI2014_001 --paradigm MotorImagery \
       --evaluation TrainTest --architecture paper "$@"
     ;;
+  release)
+    shift
+    RELEASE_ROOT="${RELEASE_ROOT:-${ROOT}/artifacts/release}"
+    RELEASE_BENCHMARKS="${RELEASE_BENCHMARKS:-${RELEASE_ROOT}/benchmarks}"
+    mkdir -p "${RELEASE_BENCHMARKS}"
+    for seed in ${SEEDS:-0 1 2}; do
+      "${PYTHON:-python}" -m benchmarks.run_moabb \
+        --output-dir "${RELEASE_BENCHMARKS}" \
+        --dataset BNCI2014_001 --paradigm MotorImagery \
+        --evaluation TrainTest --architecture paper \
+        --seed "${seed}" \
+        --export-dir "${RELEASE_ROOT}/bundles" \
+        --verification-dir "${RELEASE_ROOT}/verification" \
+        "$@"
+    done
+    "${PYTHON:-python}" -m benchmarks.summarize_release \
+      --input-dir "${RELEASE_BENCHMARKS}" --output-dir "${RELEASE_ROOT}/results" \
+      --seeds ${SEEDS:-0 1 2}
+    exit 0
+    ;;
   custom)
     shift
     ;;
   help | -h | --help)
-    echo "Usage: scripts/run [smoke|all|custom] [benchmark args...]"
+    echo "Usage: scripts/run [smoke|all|release|custom] [benchmark args...]"
     exit 0
     ;;
   -*)

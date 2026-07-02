@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "If you use CTNet-HF, please cite this software and the CTNet paper."
+title: "CTNet-HF: Hugging Face-compatible CTNet for EEG classification"
+type: software
+authors:
+  - family-names: Kozyrskiy
+    given-names: Bogdan
+repository-code: "https://github.com/bkozyrskiy/ctnet-hf"
+license: MIT
+version: 0.1.0
+preferred-citation:
+  type: article
+  title: "CTNet: a convolutional transformer network for EEG-based motor imagery classification"
+  journal: Scientific Reports
+  authors:
+    - family-names: Zhao
+      given-names: Wei
+    - family-names: Jiang
+      given-names: Xiaolu
+    - family-names: Zhang
+      given-names: Baocan
+    - family-names: Xiao
+      given-names: Shixiao
+    - family-names: Weng
+      given-names: Sujun
+  volume: 14
+  year: 2024
+  doi: "10.1038/s41598-024-71118-7"

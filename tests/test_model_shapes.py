@@ -53,3 +53,10 @@ def test_paper_model_uses_fifteen_flattened_tokens():
     assert outputs.last_hidden_state.shape == (2, 15, 16)
     assert outputs.pooler_output.shape == (2, 240)
     assert model.classifier.in_features == 240
+
+
+def test_model_rejects_wrong_time_length():
+    model = CtnetForEEGClassification(CtnetConfig(n_channels=3, n_times=1000))
+
+    with pytest.raises(ValueError, match="Expected 1000 time samples"):
+        model(input_values=torch.randn(2, 3, 999))

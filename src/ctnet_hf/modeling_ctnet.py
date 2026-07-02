@@ -324,6 +324,7 @@ class CtnetModel(CtnetPreTrainedModel):
         inputs = ensure_eeg_tensor(
             input_values,
             expected_channels=self.config.n_channels,
+            expected_times=self.config.n_times,
         )
         hidden_states, pooled_output = self.encoder(inputs)
 

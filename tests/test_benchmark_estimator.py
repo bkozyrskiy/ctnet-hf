@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+import torch
 
 from benchmarks.ctnet_estimator import CtnetSklearnClassifier
+from ctnet_hf import CtnetForEEGClassification, CtnetPreprocessor
 
 
-def test_ctnet_estimator_fit_predict_and_score():
+def test_ctnet_estimator_fit_predict_score_and_export(tmp_path):
     rng = np.random.default_rng(0)
     x = rng.normal(size=(8, 3, 128)).astype(np.float32)
     y = np.array(["left", "right", "left", "right", "left", "right", "left", "right"])
@@ -36,6 +38,24 @@ def test_ctnet_estimator_fit_predict_and_score():
     assert np.allclose(probabilities.sum(axis=1), 1.0)
     assert 0.0 <= score <= 1.0
     assert estimator.label2id_ == {"left": 0, "right": 1}
+
+    estimator.save_pretrained(
+        str(tmp_path),
+        channel_names=["a", "b", "c"],
+        dataset="dummy",
+    )
+    processor = CtnetPreprocessor.from_pretrained(tmp_path)
+    model = CtnetForEEGClassification.from_pretrained(tmp_path).to(
+        estimator.device_
+    ).eval()
+    with torch.no_grad():
+        inputs = processor(x[:2], return_tensors="pt")
+        inputs = {key: value.to(estimator.device_) for key, value in inputs.items()}
+        reloaded_probabilities = (
+            torch.softmax(model(**inputs).logits, -1).cpu().numpy()
+        )
+
+    np.testing.assert_allclose(probabilities, reloaded_probabilities, rtol=1e-6)
 
 
 def test_ctnet_estimator_rejects_non_eeg_shape():
