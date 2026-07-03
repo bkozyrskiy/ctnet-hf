@@ -6,7 +6,7 @@ from ctnet_hf import CtnetConfig, CtnetForEEGClassification
 
 
 def main() -> None:
-    config = CtnetConfig()
+    config = CtnetConfig(architecture="paper")
     model = CtnetForEEGClassification(config)
     x = torch.randn(2, config.n_channels, config.n_times)
 

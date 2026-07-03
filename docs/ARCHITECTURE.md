@@ -101,11 +101,11 @@ engineering and evaluation behavior:
   position capacity are represented by `CtnetConfig` and validated early.
 - Outputs use Transformers model-output objects and support the standard
   `save_pretrained` and AutoClass APIs.
-- Release bundles use `safetensors` and serialize the exact channel order,
-  sampling rate, units, crop, and training-only normalization statistics.
+- The Hugging Face model publishes a deterministic untrained initialization;
+  subject-specific preprocessing must be fitted on the user's own training data.
 - No checkpoint from the authors' repository is copied or converted.
 
-The bundled benchmark is paper-compatible rather than bug-for-bug identical to
+The local benchmark is paper-compatible rather than bug-for-bug identical to
 the released training script:
 
 - It creates one fixed stratified validation split instead of rebuilding a
@@ -115,8 +115,7 @@ the released training script:
   trials.
 - The competition training session and test session remain separate, and the
   test session is used only for final evaluation.
-- Seeds and deterministic PyTorch settings are explicit, and every exported
-  model is reloaded before its held-out predictions are accepted.
+- Seeds and deterministic PyTorch settings are explicit in the local benchmark.
 
 These corrections make the evaluation easier to audit, but they also mean the
 frozen CTNet-HF scores should not be presented as a direct reproduction of the
@@ -126,10 +125,8 @@ paper's reported numbers.
 
 - Configuration: [`src/ctnet_hf/configuration_ctnet.py`](../src/ctnet_hf/configuration_ctnet.py)
 - Model implementation: [`src/ctnet_hf/modeling_ctnet.py`](../src/ctnet_hf/modeling_ctnet.py)
-- Serialized preprocessing: [`src/ctnet_hf/preprocessing.py`](../src/ctnet_hf/preprocessing.py)
 - Benchmark protocol: [`benchmarks/README.md`](../benchmarks/README.md)
-- Frozen three-seed results: [`release/README.md`](../release/README.md)
-- Raw 27-row result table: [`release/results/bnci2014_001_three_seed_results.csv`](../release/results/bnci2014_001_three_seed_results.csv)
+- Hugging Face Model Card: [`hf_model/README.md`](../hf_model/README.md)
 - Software citation: [`CITATION.cff`](../CITATION.cff)
 
 ## References

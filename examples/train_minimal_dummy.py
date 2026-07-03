@@ -10,7 +10,7 @@ from ctnet_hf import CtnetConfig, CtnetForEEGClassification
 def main() -> None:
     torch.manual_seed(0)
 
-    config = CtnetConfig()
+    config = CtnetConfig(architecture="paper")
     model = CtnetForEEGClassification(config)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 

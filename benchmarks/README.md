@@ -16,12 +16,6 @@ Full paper-compatible subject-specific benchmark:
 scripts/run all
 ```
 
-Three-seed release benchmark, bundle export, and equivalence checks:
-
-```bash
-scripts/run release --device cuda
-```
-
 Custom invocation:
 
 ```bash
@@ -63,34 +57,10 @@ moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-0.csv
 moabb_BNCI2014_001_MotorImagery_TrainTest_paper_seed-0_summary.csv
 ```
 
-TrainTest results include accuracy, Cohen's kappa, seed, selected epoch, bundle
-path, and the maximum export/reload probability difference. Per-seed summaries
-report mean and sample standard deviation across subjects. The release runner
-also writes three-seed summaries under `artifacts/release/results/`, separating
-variation across subjects from variation across seeds within a subject.
-
-Each exported bundle includes:
-
-- `model.safetensors` and `config.json`;
-- `preprocessor_config.json` with the fitted training-only Z-score, channel
-  order, input units, sampling rate, and trial window;
-- `training_metadata.json` with all hyperparameters and package versions;
-- `export_reload_equivalence.json` with the held-out prediction check;
-- `release_manifest.json` with SHA-256 checksums;
-- the MIT license, third-party/data notices, and a subject-specific model card.
-
-One raw held-out trial is kept outside the publishable bundle under
-`artifacts/release/verification/` for the clean-environment inference gate.
-The result tables used for the first card are frozen under `release/results/`.
-
-Existing trained bundles can be upgraded to the current card, preprocessing
-auto-class, legal files, and checksum manifest without retraining:
-
-```bash
-python -m benchmarks.refresh_release_bundles \
-  --bundle-root artifacts/release/bundles \
-  --results release/results/bnci2014_001_three_seed_results.csv
-```
+TrainTest results include accuracy, Cohen's kappa, seed, and selected epoch.
+Per-seed summaries report mean and sample standard deviation across subjects.
+Benchmark outputs remain local under `artifacts/` and are not part of the
+untrained Hugging Face model repository.
 
 ## Useful options
 

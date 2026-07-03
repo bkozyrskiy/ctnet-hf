@@ -1,0 +1,48 @@
+{
+  "architecture": "paper",
+  "architectures": [
+    "CtnetForEEGClassification"
+  ],
+  "att_depth": 6,
+  "att_dim": 16,
+  "att_heads": 2,
+  "att_mlp_dim": 64,
+  "auto_map": {
+    "AutoConfig": "configuration_ctnet.CtnetConfig",
+    "AutoModel": "modeling_ctnet.CtnetModel",
+    "AutoModelForSequenceClassification": "modeling_ctnet.CtnetForEEGClassification"
+  },
+  "classifier_dropout": 0.5,
+  "depth_multiplier": 2,
+  "dropout": 0.5,
+  "dtype": "float32",
+  "filter_time_length": 64,
+  "id2label": {
+    "0": "LABEL_0",
+    "1": "LABEL_1",
+    "2": "LABEL_2",
+    "3": "LABEL_3"
+  },
+  "initialization": "random",
+  "initialization_seed": 0,
+  "label2id": {
+    "LABEL_0": 0,
+    "LABEL_1": 1,
+    "LABEL_2": 2,
+    "LABEL_3": 3
+  },
+  "max_position_embeddings": 100,
+  "model_type": "ctnet",
+  "n_channels": 22,
+  "n_filters_time": 8,
+  "n_times": 1000,
+  "pool_time_length": 8,
+  "pool_time_stride": 8,
+  "positional_dropout": 0.1,
+  "pretrained": false,
+  "sampling_rate": 250,
+  "second_filter_time_length": 16,
+  "second_pool_time_length": 8,
+  "second_pool_time_stride": 8,
+  "transformers_version": "4.57.6"
+}

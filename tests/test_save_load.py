@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 import torch
-import numpy as np
 from transformers import (
     AutoConfig,
-    AutoFeatureExtractor,
     AutoModelForSequenceClassification,
 )
 
-from ctnet_hf import CtnetConfig, CtnetForEEGClassification, CtnetPreprocessor
+from ctnet_hf import CtnetConfig, CtnetForEEGClassification
 
 
 def test_model_save_and_reload(tmp_path):
@@ -44,34 +42,3 @@ def test_automodel_from_pretrained_with_remote_code(tmp_path):
 
     assert config.model_type == "ctnet"
     assert outputs.logits.shape == (2, 4)
-
-
-def test_preprocessor_save_reload_equivalence(tmp_path):
-    rng = np.random.default_rng(7)
-    x = rng.normal(size=(3, 2, 16)).astype(np.float32)
-    processor = CtnetPreprocessor(
-        n_channels=2,
-        n_times=16,
-        sampling_rate=128,
-        standardize=True,
-        standardize_mode="channel",
-        mean=x.mean(axis=(0, 2), keepdims=True),
-        std=x.std(axis=(0, 2), keepdims=True),
-        channel_names=["C3", "C4"],
-        dataset="test",
-    )
-
-    before = processor(x, return_tensors="np")["input_values"]
-    processor.save_pretrained(tmp_path)
-    reloaded = CtnetPreprocessor.from_pretrained(tmp_path)
-    after = reloaded(x, return_tensors="np")["input_values"]
-
-    np.testing.assert_array_equal(before, after)
-    assert reloaded.channel_names == ["C3", "C4"]
-
-    auto_reloaded = AutoFeatureExtractor.from_pretrained(
-        tmp_path,
-        trust_remote_code=True,
-    )
-    auto_after = auto_reloaded(x, return_tensors="np")["input_values"]
-    np.testing.assert_array_equal(before, auto_after)
