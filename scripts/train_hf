@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+OUT="${OUT:-${ROOT}/artifacts/trained_hf_model}"
+
+export PYTHONPATH="${ROOT}/src:${ROOT}${PYTHONPATH:+:${PYTHONPATH}}"
+export MNE_DATA="${MNE_DATA:-${ROOT}/artifacts/mne_data}"
+export MNE_DATASETS_BNCI_PATH="${MNE_DATASETS_BNCI_PATH:-${MNE_DATA}}"
+mkdir -p "${OUT}" "${MNE_DATA}" "${MNE_DATASETS_BNCI_PATH}"
+
+exec "${PYTHON:-python}" -m benchmarks.train_all_sessions \
+  --output-dir "${OUT}" "$@"

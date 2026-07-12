@@ -140,6 +140,38 @@ scripts/run
 It writes results under ignored `artifacts/`; it does not create Hugging Face
 repositories.
 
+## Train one checkpoint on all BNCI2014-001 training sessions
+
+Install the MOABB dependencies, then launch the paper-configuration training
+run across all nine subjects:
+
+```bash
+pip install -e '.[benchmark]'
+scripts/train_hf --device cuda
+```
+
+The default run trains for 1,000 epochs on every `0train` session, applies
+subject-aware S&R augmentation, and selects the checkpoint with the highest
+mean subject accuracy on the `1test` sessions. The upload-ready model,
+preprocessor, model card, metrics, and training history are written to
+`artifacts/trained_hf_model`. Set `OUT=/path/to/output` to change this location.
+After inspecting a completed run, the selected checkpoint can replace the
+checked-in random-weight bundle directly:
+
+```bash
+OUT="$PWD/hf_model" scripts/train_hf --device cuda
+```
+
+For a quick pipeline check before the full run:
+
+```bash
+scripts/train_hf --subjects 1 --epochs 1 --device cpu
+```
+
+Because the `1test` sessions drive checkpoint selection, the resulting scores
+are tuning metrics rather than an unbiased held-out test estimate. A separate
+dataset or untouched session is required for a final generalization claim.
+
 ## Paper and citation
 
 - Wei Zhao, Xiaolu Jiang, Baocan Zhang, Shixiao Xiao, and Sujun Weng,

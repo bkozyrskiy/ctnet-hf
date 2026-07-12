@@ -75,3 +75,21 @@ untrained Hugging Face model repository.
 --evaluation CrossSession     MOABB cross-session folds, not cross-subject LOSO
 --device cuda                 train on GPU
 ```
+
+## Pooled Hugging Face checkpoint
+
+`scripts/train_hf` trains a single model on the complete training sessions of
+all selected BNCI2014-001 subjects. Unlike the subject-specific benchmark, it
+does not reserve 30% of the training trials: all `0train` trials enter the
+optimizer and global Z-score fit. S&R sources are constrained to the same
+subject and class, following the upstream repository's cross-subject
+augmentation guidance.
+
+At every epoch, the runner computes accuracy and Cohen's kappa separately for
+each `1test` session. It selects the highest unweighted mean subject accuracy
+(or mean kappa with `--selection-metric cohen_kappa`) and writes an
+upload-ready Transformers bundle to `artifacts/trained_hf_model`.
+
+This deliberately requested selection protocol consumes the nominal test
+sessions during tuning. Its output must not be described as having an unbiased
+held-out test score.
